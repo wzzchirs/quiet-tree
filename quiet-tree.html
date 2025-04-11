@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>安静小树</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            background-color: white; /* 改为白色背景 */
+            margin: 0;
+            padding: 20px;
+        }
+        .grass {
+            background-color: white; /* 草地也改为白色 */
+            height: 300px;
+            width: 100%;
+            position: relative;
+            margin-top: 30px;
+            border-radius: 10px;
+            border: 1px solid #ddd; /* 添加边框以便看清边界 */
+        }
+        .tree {
+            position: absolute;
+            transition: all 0.5s ease;
+            width: 30px; /* 增加小树宽度 */
+            height: 30px; /* 增加小树高度 */
+            font-size: 24px; /* 增大表情符号 */
+        }
+        .settings {
+            margin: 10px 0; /* 缩小设置区域 */
+            padding: 10px;
+            background-color: #e8f5e9;
+            border-radius: 5px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <h1>嘘，让小树安静生长！🌱🌳</h1>
+    
+    <div class="controls">
+        <button id="startBtn">开始检测</button>
+        <button id="resetBtn">重置小树</button>
+    </div>
+    
+    <div id="dBDisplay">当前分贝值: -- dB</div>
+    
+    <div class="settings">
+        <label for="growthThreshold">安静分贝值 (小树生长): </label>
+        <input type="number" id="growthThreshold" value="40" min="0" max="100">
+        <label for="witherThreshold">噪音分贝值 (小树枯萎): </label>
+        <input type="number" id="witherThreshold" value="70" min="0" max="100">
+    </div>
+    
+    <div class="grass" id="grass"></div>
+
+    <script>
+        const grass = document.getElementById('grass');
+        const dBDisplay = document.getElementById('dBDisplay');
+        const startBtn = document.getElementById('startBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const growthThresholdInput = document.getElementById('growthThreshold');
+        const witherThresholdInput = document.getElementById('witherThreshold');
+        
+        // 全局变量声明
+        let audioContext;
+        let analyser;
+        let microphone;
+        let isRunning = false;
+        let trees = [];
+        let witheredTime = 0;
+        
+        // 小树生长控制变量
+        let lastTreeUpdateTime = 0;
+        let currentGrowingTreeIndex = -1;
+        let isTreeGrowing = false;
+        let currentTreeStage = 0;
+        
+        // 噪音控制变量
+        let lastNoisyTime = 0;
+        let witheredCount = 0;
+        let lastProcessedTreeIndex = -1; // 添加这个缺失的声明
+
+        // 修改创建小树函数
+        function createTrees() {
+            grass.innerHTML = '';
+            trees = [];
+            const now = Date.now();
+            
+            for (let row = 0; row < 4; row++) {
+                for (let col = 0; col < 10; col++) {
+                    const tree = document.createElement('div');
+                    tree.className = 'tree tree-seedling';
+                    tree.style.left = `${(col + 0.5) * 9}%`;
+                    tree.style.top = `${220 - row * 60}px`;
+                    tree.innerHTML = '🌱';
+                    tree.dataset.state = 'seedling';
+                    tree.dataset.lastUpdate = now; // 初始化时间戳
+                    grass.appendChild(tree);
+                    trees.push(tree);
+                }
+            }
+        }
+        
+        // 修改更新函数
+        function updateTrees(dB) {
+            const growthThreshold = parseInt(growthThresholdInput.value);
+            const witherThreshold = parseInt(witherThresholdInput.value);
+            const now = Date.now();
+            
+            if (dB >= witherThreshold) {
+                // 记录开始变吵的时间
+                if (lastNoisyTime === 0) {
+                    lastNoisyTime = now;
+                }
+                
+                // 每20秒枯萎一棵树
+                if (now - lastNoisyTime >= 20000) {
+                    lastNoisyTime = now;
+                    
+                    // 枯萎当前生长中的小树
+                    if (isTreeGrowing && currentGrowingTreeIndex >= 0) {
+                        const tree = trees[currentGrowingTreeIndex];
+                        if (tree.dataset.state !== 'withered') {
+                            tree.dataset.state = 'withered';
+                            tree.className = 'tree tree-withered';
+                            tree.innerHTML = '🍂';
+                            // 重置生长状态
+                            isTreeGrowing = false;
+                            currentTreeStage = 0;
+                            lastTreeUpdateTime = now;
+                        }
+                    }
+                }
+            } else if (dB <= growthThreshold) {  // 只有当分贝值低于growthThreshold时才生长
+                // 环境安静时重置变吵计时
+                lastNoisyTime = 0;
+                
+                // 如果没有小树在生长，选择下一棵
+                if (!isTreeGrowing) {
+                    currentGrowingTreeIndex = (currentGrowingTreeIndex + 1) % trees.length;
+                    isTreeGrowing = true;
+                    currentTreeStage = 0;
+                    lastTreeUpdateTime = now;
+                }
+                
+                // 处理当前正在生长的小树
+                const tree = trees[currentGrowingTreeIndex];
+                if (now - lastTreeUpdateTime >= 20000) {
+                    lastTreeUpdateTime = now;
+                    
+                    // 如果是枯萎状态，恢复为幼苗
+                    if (tree.dataset.state === 'withered') {
+                        tree.dataset.state = 'seedling';
+                        tree.className = 'tree tree-seedling';
+                        tree.innerHTML = '🌱';
+                        currentTreeStage = 0;
+                    } 
+                    // 否则正常生长
+                    else {
+                        if (currentTreeStage === 0) {
+                            tree.dataset.state = 'growing';
+                            tree.className = 'tree tree-growing';
+                            tree.innerHTML = '🌿';
+                            currentTreeStage = 1;
+                        } else if (currentTreeStage === 1) {
+                            tree.dataset.state = 'flowering';
+                            tree.className = 'tree tree-flowering';
+                            tree.innerHTML = '🌲';
+                            currentTreeStage = 2;
+                        } else if (currentTreeStage === 2) {
+                            tree.dataset.state = 'fruiting';
+                            tree.className = 'tree tree-fruiting';
+                            tree.innerHTML = '🌳';
+                            isTreeGrowing = false;
+                        }
+                    }
+                }
+            }
+            // 当分贝值在growthThreshold和witherThreshold之间时，不做任何处理
+        }
+        
+        // 开始音频检测
+        async function startDetection() {
+            if (isRunning) return;
+            
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+                
+                isRunning = true;
+                startBtn.textContent = '检测中...';
+                
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                
+                function analyze() {
+                    if (!isRunning) return;
+                    
+                    analyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i];
+                    }
+                    const average = sum / dataArray.length;
+                    const dB = Math.round(average);
+                    
+                    dBDisplay.textContent = `当前分贝值: ${dB} dB`;
+                    updateTrees(dB);
+                    
+                    requestAnimationFrame(analyze);
+                }
+                
+                analyze();
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                alert('无法访问麦克风: ' + error.message);
+                isRunning = false;
+                startBtn.textContent = '开始检测';
+            }
+        }
+        
+        // 停止检测
+        function stopDetection() {
+            if (microphone) {
+                microphone.disconnect();
+                microphone = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            isRunning = false;
+            startBtn.textContent = '开始检测';
+        }
+        
+        // 重置小树
+        function resetTrees() {
+            createTrees();
+            witheredTime = 0;
+        }
+        
+        // 事件监听
+        startBtn.addEventListener('click', () => {
+            if (isRunning) {
+                stopDetection();
+            } else {
+                startDetection();
+            }
+        });
+        
+        resetBtn.addEventListener('click', resetTrees);
+        
+        // 初始化
+        createTrees();
+    </script>
+</body>
+</html>
