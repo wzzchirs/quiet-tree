@@ -116,8 +116,8 @@
                     lastNoisyTime = now;
                 }
                 
-                // 每20秒枯萎一棵树
-                if (now - lastNoisyTime >= 20000) {
+                // 每5秒枯萎一棵树
+                if (now - lastNoisyTime >= 5000) {
                     lastNoisyTime = now;
                     
                     // 枯萎当前生长中的小树
